@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-dcm-version="v{{VERSION}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DCM MAP 对比工具 · 离线单文件</title>
+<style>
+{{STYLE}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">DCM MAP 对比工具 <button id="btnVersion" class="ver-btn" type="button" data-tip="版本与更新记录">v{{VERSION}}</button><span class="ver">离线 · 单文件 · 不联网</span><span class="author">作者 Henry</span></div>
+  <div class="top-actions">
+    <button id="btnManual" class="btn gray" type="button" data-tip="打开使用手册">查看使用手册</button>
+    <button id="btnLoad" class="btn" type="button" data-tip="载入 DCM 文件">载入 DCM</button>
+    <input id="fileInput" type="file" multiple accept=".dcm,.DCM,.txt,.dat">
+    <button id="btnSelfTest" class="btn ghost" type="button" data-tip="跑内置变异自检">解析自检</button>
+    <button id="btnSaveSession" class="btn ghost" type="button" disabled data-tip="存成会话 JSON" data-tip-off="需先载入 DCM">保存会话</button>
+    <button id="btnLoadSession" class="btn ghost" type="button" data-tip="载入会话 JSON">载入会话</button>
+    <input id="sessionInput" type="file" accept=".json,application/json">
+    <button id="btnScan" class="btn" disabled data-tip="扫两份的全部同名差异" data-tip-off="需 2 份以上 DCM">全量版本对比</button>
+    <button id="btnReport" class="btn primary" disabled data-tip="导出对比报告" data-tip-off="需先载入 DCM">导出 HTML 报告</button>
+    <button id="btnAuditReport" class="btn" disabled data-tip="导出变化清单报告" data-tip-off="需 2 份以上 DCM">全量变化报告</button>
+  </div>
+</header>
+
+<div id="dropzone" class="dropzone">把 .DCM 拖到这里，或点「载入 DCM」。可同时载入多份做版本对比，文件只在本地解析，不上传。</div>
+
+<div class="layout">
+  <aside class="side">
+    <div class="panel" style="display:flex;flex-direction:column;min-height:0;flex:1">
+      <div class="panel-head"><span>数据源</span><span id="dsCount">0 个文件</span></div>
+      <div class="panel-body" style="padding-bottom:4px"><div id="dsList" class="ds-list"></div></div>
+      <div class="panel-head"><span>检索与分组</span><span id="objCount"></span></div>
+      <div class="panel-body" style="padding-bottom:4px">
+        <input id="search" class="input" placeholder="名称 / 功能 / 维度，支持部分匹配">
+        <div class="tabs small" id="listTabs">
+          <button data-list="groups" class="active" data-tip="按同轴分组">同轴组</button>
+          <button data-list="versions" data-tip="按同名跨版本">跨版本</button>
+          <button data-list="all" data-tip="列出全部对象">全部对象</button>
+        </div>
+      </div>
+      <div id="tree" class="tree"></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="panel" style="margin-bottom:12px">
+      <div class="basket-head">
+        <span>对比清单 <span id="basketCount" style="color:#888780;font-weight:400"></span></span>
+        <div class="basket-actions">
+          <button id="btnAutoPair" class="mini" data-tip="按同名自动配对" data-tip-off="需 2 份以上 DCM">同名自动配对</button>
+          <button id="btnClear" class="mini" data-tip="清空对比清单">清空</button>
+        </div>
+      </div>
+      <div id="basket" class="chips"><span class="hint" style="margin:0">从左侧点「＋」加入 MAP，或在同轴组上点「整组加入」。</span></div>
+      <div class="settings">
+        <label>基准 <select id="selBase"></select></label>
+        <label>差异 <select id="selMode"><option value="absolute">绝对差</option><option value="relative">相对差 %</option></select></label>
+        <label>阈值 <input id="inpEps" type="number" value="1e-9" step="1e-9" style="width:92px"></label>
+        <label><input id="chkAutoEps" type="checkbox"> 自动阈值</label>
+        <span id="epsHint" class="hint" style="margin:0"></span>
+        <label><input id="chkOnlyChanged" type="checkbox"> 只看变化格</label>
+        <label><input id="chkValues" type="checkbox"> 格内显示数值</label>
+        <label title="HTML 报告里默认展开的对比项数量，其余折叠为紧凑清单">报告展开项 <input id="inpReportPageSize" type="number" min="1" max="200" value="12" style="width:62px"></label>
+      </div>
+    </div>
+
+    <div class="viewtabs" id="viewTabs">
+      <button data-view="heat" class="active" data-tip="逐格 Δ 热力图">差异热力矩阵</button>
+      <button data-view="curve" data-tip="固定一行/列看曲线">切面曲线叠加</button>
+      <button data-view="surface" data-tip="7 种曲面模式">3D 曲面</button>
+      <button data-view="profile" data-tip="同一工况格在对比清单各层上的取值">跨版本剖面</button>
+      <button data-view="table" data-tip="逐格原值与行号">逐格明细</button>
+      <button data-view="scan" data-tip="跨版本同名变化">版本变更清单</button>
+      <button data-view="rename" data-tip="找改名候选">改名对齐</button>
+      <button data-view="axis" data-tip="改轴波及哪些表">轴变更影响面</button>
+      <button data-view="audit" data-tip="全部标定量账本">全量变化清单</button>
+      <button data-view="help" data-tip="使用说明">说明</button>
+    </div>
+
+    <div id="stage" class="stage"><div class="help">
+      <p class="hint">第一次使用？点顶部「查看使用手册」看完整操作说明（可打印 / 存 PDF）。</p>
+      <h3>三步开始</h3>
+      <p>1. 点右上角「载入 DCM」或把 .DCM 拖进上方虚线框，可一次载入多份做版本对比。</p>
+      <p>2. 左侧按<b>同轴组</b>聚类（轴数值完全相同的一批表），点「整组加入」把整批 MAP 放进对比清单；点标签可切换基准。</p>
+      <p>3. 切页签看差异：热力矩阵 / 切面曲线叠加 / 3D 曲面 / 跨版本剖面 / 逐格明细；最后「导出 HTML 报告」。</p>
+      <h3>差异规则</h3>
+      <p>轴一致 → 逐格相减；同维度但轴刻度不同 → 双线性插值并显式标记；维度不同 → 直接拒绝。相对差在基准为 0 时降级为绝对差。</p>
+      <p>支持 DAMOS <code>KONSERVIERUNG_FORMAT 2.0</code>（GB2312/GBK）。全过程在本地内存解析，不联网、不上传、不截屏。</p>
+    </div></div>
+    <div id="conclusion" class="conclusion"></div>
+    <div id="annotations" class="annotations"></div>
+    <div id="stats" class="stats"></div>
+  </main>
+</div>
+
+<footer class="status"><span id="statusText">未载入文件</span><span id="statusRight">GB2312 / GBK 自动识别 · 全程本地 · 本工具由 Henry 开发，供内部标定评审使用；请保留署名，未经许可请勿转售或二次分发。</span></footer>
+<div id="tooltip" class="tooltip"></div>
+
+<!-- 内嵌使用手册：静态 HTML，不依赖脚本生成，离线可看、可打印 -->
+<div id="manualOverlay" class="manual-overlay" hidden>
+  <div class="manual-panel" role="dialog" aria-modal="true" aria-labelledby="manualTitle">
+    <div class="manual-head">
+      <div>
+        <h2 id="manualTitle">DCM MAP 对比工具 · 使用手册</h2>
+        <p>单文件离线工具 · 不联网 · 数据不上传 · 按 Esc 或点外侧关闭</p>
+      </div>
+      <div class="manual-head-actions">
+        <button id="btnManualPrint" class="btn gray" type="button" data-tip="打印或存 PDF">打印 / 存 PDF</button>
+        <button id="btnManualClose" class="btn ghost" type="button" data-tip="关闭手册">关闭</button>
+      </div>
+    </div>
+    <nav class="manual-nav" id="manualNav" aria-label="手册目录">
+      <button type="button" data-target="m-start" data-tip="跳到本节">1 快速上手</button>
+      <button type="button" data-target="m-map" data-tip="跳到本节">2 界面地图</button>
+      <button type="button" data-target="m-parse" data-tip="跳到本节">3 载入与解析</button>
+      <button type="button" data-target="m-diff" data-tip="跳到本节">4 差异与 3D</button>
+      <button type="button" data-target="m-inspect" data-tip="跳到本节">5 体检与结论</button>
+      <button type="button" data-target="m-report" data-tip="跳到本节">6 两种报告</button>
+      <button type="button" data-target="m-review" data-tip="跳到本节">7 评审与归档</button>
+      <button type="button" data-target="m-session" data-tip="跳到本节">8 会话复现</button>
+      <button type="button" data-target="m-share" data-tip="跳到本节">9 分享与 FAQ</button>
+      <button type="button" data-target="m-limit" data-tip="跳到本节">10 边界与隐私</button>
+    </nav>
+    <div class="manual-body">
+
+      <section id="m-start">
+        <h3>1. 快速上手（三步）</h3>
+        <ol>
+          <li><b>载入 DCM</b>：点右上角「载入 DCM」（可一次选多份），或把 <code>.DCM</code> 拖进上方虚线框。做跨版本对比至少需要 2 份。</li>
+          <li><b>加入对比清单</b>：左侧按「同轴组」聚类，点「整组加入」把一整批同轴 MAP 放进对比清单；也可单个点「＋」。在「基准」下拉里指定一张，其余自动成为对比项。</li>
+          <li><b>看差异、出报告</b>：切页签看热力矩阵、切面曲线、3D 曲面、跨版本剖面、逐格明细；最后点「导出 HTML 报告」或「全量变化报告」。</li>
+        </ol>
+        <p>对比清单的规则是 <b>1 张基准 + N 张对比</b>。点清单里的标签可切换基准，「同名自动配对」把不同 DCM 里的同名对象一次拉进来，「清空」全部移除。</p>
+      </section>
+
+      <section id="m-map">
+        <h3>2. 界面地图</h3>
+        <h4>顶部按钮</h4>
+        <table><thead><tr><th>按钮</th><th>作用</th></tr></thead><tbody>
+          <tr><td>版本号（页头左侧）</td><td>点开更新记录；版本号与记录来自构建时注入，不在运行时拼接</td></tr>
+          <tr><td>查看使用手册</td><td>打开本手册（Esc 或点遮罩关闭，可打印 / 存 PDF）</td></tr>
+          <tr><td>载入 DCM</td><td>选择 1~N 份 DCM</td></tr>
+          <tr><td>解析自检</td><td>内置变异测试：改一格必须精确定位、还原必须 0 变化、维度不同必须拒绝</td></tr>
+          <tr><td>保存会话 / 载入会话</td><td>把当前配置存成 JSON / 从 JSON 恢复</td></tr>
+          <tr><td>全量版本对比</td><td>扫两份 DCM 的全部同名对象，只列有变化者</td></tr>
+          <tr><td>导出 HTML 报告</td><td>对比清单视图的完整证据报告</td></tr>
+          <tr><td>全量变化报告</td><td>按标定量类型分章的全量变化清单报告</td></tr>
+        </tbody></table>
+        <p class="hint">所有按钮悬停都会给出提示；按钮不可用时提示直接说明原因（如「需 2 份以上 DCM」），不用点下去才发现点不动。</p>
+        <h4>左侧与主区</h4>
+        <p>左侧是「数据源」与「检索与分组」（按名称 / 功能 / 维度搜索；分组方式：同轴组 / 跨版本 / 全部对象）。<b>同轴组按轴数值数组聚类，不按 <code>*SSTX</code> 引用名</b>——DCM 里引用名几乎一对一，按名字分组会把 60 张同轴表拆散。</p>
+        <p>主区设置：基准、差异模式（绝对差 / 相对差 %）、阈值与自动阈值、只看变化格、格内显示数值、报告展开项（HTML 报告默认展开的对比项数量，其余折叠为紧凑清单）。</p>
+        <h4>10 个视图页签</h4>
+        <table><thead><tr><th>页签</th><th>看什么</th></tr></thead><tbody>
+          <tr><td>差异热力矩阵</td><td>逐格 Δ；红=增大、蓝=减小、灰=不变；悬停显示 X/Y 值与两边原值</td></tr>
+          <tr><td>切面曲线叠加</td><td>固定某一行或列，基准 + 全部对比叠成 N 条曲线；可看最大偏差包络</td></tr>
+          <tr><td>3D 曲面</td><td>7 种模式，见第 4 节</td></tr>
+          <tr><td>跨版本剖面</td><td>选一个工况格（或直接点热力矩阵的格子），画出它在对比清单各层上的取值曲线，带基准参考线</td></tr>
+          <tr><td>逐格明细</td><td>坐标、基准原值、对比原值、Δ、相对 %、来源文件与 DCM 行号；可导出 CSV（带 BOM，Excel 直接打开）</td></tr>
+          <tr><td>版本变更清单</td><td>跨版本同名对象全量扫描，只列有变化者</td></tr>
+          <tr><td>改名对齐</td><td>找版本升级改名的候选，只给候选、不自动合并</td></tr>
+          <tr><td>轴变更影响面</td><td>改一根轴波及哪些表，按完整轴指纹反查</td></tr>
+          <tr><td>全量变化清单</td><td>两份以上 DCM 的全部标定量的变化账本与证据</td></tr>
+          <tr><td>说明</td><td>工具内简要说明</td></tr>
+        </tbody></table>
+      </section>
+
+      <section id="m-parse">
+        <h3>3. 载入与解析</h3>
+        <ul>
+          <li>格式：DAMOS <code>KONSERVIERUNG_FORMAT 2.0</code>，<b>GB2312 / GBK</b> 编码（工具自动解码，不要按 UTF-8 另存）。</li>
+          <li>解析对象：<code>FESTWERT</code> 标量、<code>FESTWERTEBLOCK</code> 数组、<code>GRUPPENKENNLINIE</code> / <code>FESTKENNLINIE</code> 曲线、<code>GRUPPENKENNFELD</code> 2D MAP、<code>STUETZSTELLENVERTEILUNG</code> 轴定义。<b>轴定义是正式标定量</b>，参与变化清单与完整性对账。</li>
+          <li><code>ST/X</code>、<code>WERT</code> 会折行，工具按块头声明的 <code>NX/NY</code> 收齐；每个 <code>ST/Y</code> 后的 <code>WERT</code> 是一整行数据。逐块校验点数，异常块报文件名与行号，不静默跳过。</li>
+          <li>遇到未识别块不丢弃，会列进自检告警并标注「格式未经实测」。三轴查找表当前仅解析第一层：全量变化账本一律判「对比被拒绝」；对比清单里只按第一层参与计算，列表项与报告都标注「3D·仅第一层」，不伪装成完整三维结果。</li>
+        </ul>
+        <p>实测基线（示例 <code>ALL.DCM</code>）：22,813 个块 = 21,090 个数值标定量 + 1,723 个轴定义；651 张 2D MAP 聚成 159 个同轴组，最大一组 60 张 15×11。全量审查约 0.3~0.5 秒。</p>
+      </section>
+
+      <section id="m-diff">
+        <h3>4. 差异规则与 3D 曲面</h3>
+        <table><thead><tr><th>情况</th><th>处理</th></tr></thead><tbody>
+          <tr><td>轴数值完全一致</td><td>逐格相减，默认且最可信</td></tr>
+          <tr><td>维度相同、轴刻度不同</td><td>双线性插值对齐到基准轴，<b>界面与报告显著标记「已插值」</b>，不要当原始值</td></tr>
+          <tr><td>维度不同</td><td>直接拒绝并说明原因，不硬凑</td></tr>
+          <tr><td>轴断点非单调或有重复</td><td>明确拒绝插值并列出原因，不给一个看着正常的错误结果</td></tr>
+        </tbody></table>
+        <p>相对差在基准值为 0 时降级为绝对差并标记；小于阈值的差视为未变化。自动阈值按量纲推算（连续量按量级 × 1e-6，整数枚举 / 开关量沿用 1e-9）。</p>
+        <h4>3D 曲面的 7 种模式</h4>
+        <table><thead><tr><th>模式</th><th>作用</th></tr></thead><tbody>
+          <tr><td>差曲面 Z=Δ</td><td>1 基准 + 1 对比的差</td></tr>
+          <tr><td>基准 / 对比 / 双曲面叠加</td><td>单对查看</td></tr>
+          <tr><td>最大偏差包络（A）</td><td>每格取 N 张对比里偏差最大的那张，可切「按来源表」着色，看峰值由哪张表造成</td></tr>
+          <tr><td>曲面小多图（B）</td><td>每张表一张小曲面，统一 Z 值域与色标，一眼扫出哪张形状不一样</td></tr>
+          <tr><td>N 张叠加（C）</td><td>「默认叠加」同 Z 基准半透明叠合；「拉开距离」沿第三维分层，间距可调、逐层可开关</td></tr>
+        </tbody></table>
+        <p>7 种模式共用一套视角参数：图上拖动旋转、滚轮缩放、可复位。X/Y 标真实轴断点值与单位，Z 按值域标 5 档，底板带刻度网格；「定位轴 / 定位值」把某个 X 或 Y 值对应的曲面带用橙色描边标出，用于定位具体工况点。</p>
+      </section>
+
+      <section id="m-inspect">
+        <h3>5. 变更体检与对比摘要</h3>
+        <p><b>体检</b>：孤立突变点（变化格四邻域全没变，误改的最强信号）、沿轴趋势反转、风险等级 高 / 中 / 低。按对象类型分派：标量没有邻域与沿轴趋势，孤立点与趋势反转判据不适用；一维数组 / 曲线只看左右邻域与 X 方向趋势；二维 MAP 保留四邻域 + 双轴判定；轴定义是断点序列，改单个断点属正常标定，改后是否单调、有无重复断点才是指标。</p>
+        <p><b>对比摘要</b>（统计区上方）：改动模式（整体缩放 / 局部调整 / 单点修正 / 形状重构）、方向、变化最密集的真实轴值区间、体检汇总。填「允许偏差」后列出所有超差工况区间（真实 X/Y 轴值）。<b>它只陈述差异事实、供评审参考，不给放行 / 驳回建议</b>——结论由评审人在批注里写。报告首段就是这段摘要。</p>
+        <p>注意：<b>全量变化报告只陈述事实，不给放行 / 驳回建议</b>；对比摘要同样只陈述事实，也不给建议。放行与否由评审人判断并写进批注。</p>
+      </section>
+
+      <section id="m-report">
+        <h3>6. 两种报告</h3>
+        <table><thead><tr><th></th><th>导出 HTML 报告</th><th>全量变化报告</th></tr></thead><tbody>
+          <tr><td>输入</td><td>对比清单里的那几张表</td><td>2 份以上 DCM 的全部标定量</td></tr>
+          <tr><td>内容</td><td>自检、对比摘要、热力 / 曲线 / 3D 曲面 / 剖面、逐格明细</td><td>7 章：数据源自检、完整性对账与变化摘要、按类型分章证据、新增 / 删除 / 被拒绝、轴定义断点变化、范围边界、会话 JSON</td></tr>
+          <tr><td>未变化项</td><td>不涉及</td><td>只给计数与恒等式对账，不列清单</td></tr>
+          <tr><td>结论</td><td>对比摘要只陈述事实，不给建议</td><td>不给建议</td></tr>
+          <tr><td>轴定义</td><td>不涉及</td><td>正式标定量；统计、分类、证据、评审全部集中在「轴定义断点变化类型」一节</td></tr>
+        </tbody></table>
+        <p>两份都是<b>自包含离线 HTML</b>：内联 SVG、零外部依赖、双击即开、可直接转发。报告里内嵌会话 JSON，可复制后用工具「载入会话」复现。</p>
+      </section>
+
+      <section id="m-review">
+        <h3>7. 评审批注与归档（最容易混淆的一层）</h3>
+        <ol>
+          <li><b>工具内</b>：对比摘要下方可对每个对比项写结论 / 意见 / 需求号 / 责任人；「全量变化清单」页签点任一变化项的「证据」，<b>有变化 / 新增 / 删除 / 被拒绝</b>都能同样写评审。批注随会话 JSON 与 HTML 报告一起导出。</li>
+          <li><b>报告内实时保存仅在本机生效</b>：批注一输入就写入本机浏览器存储，重新打开同一份原报告会自动恢复、仍可继续编辑。换电脑、换浏览器、清浏览器数据、直接把原文件发给同事 → 批注全丢，因为磁盘上的 HTML 一个字节都没变。</li>
+          <li><b>要跨机器 / 转发</b>：点「另存含批注的可编辑副本」，生成一份内嵌最新批注、仍可编辑 / 导出的新 HTML（<code>DCM_MAP_原报告_含批注_日期.html</code>）。用它覆盖原文件或转发给下一位评审。</li>
+          <li><b>签核归档</b>：点「导出归档报告」→ 浏览器中央弹手写签名板（鼠标 / 触摸 / 触控笔通用）→ 手写签名确认。签名 PNG、归档时间、报告 ID 写入输出报告；<b>归档版批注只读</b>，控件禁用、不再提供编辑与再次导出入口。没落笔不许确认，取消不导出。</li>
+        </ol>
+        <p><b>边界</b>：签名是手写痕迹、可复制，不是数字签名；本版本不做防篡改，归档版不具备密码学保证。浏览器不能直接改写本地磁盘文件，下载同名文件不会自动覆盖原文件（浏览器会加 <code>(1)</code>），替换需手动。</p>
+      </section>
+
+      <section id="m-session">
+        <h3>8. 会话复现</h3>
+        <p>「保存会话」把数据源、对比清单、基准、阈值、当前视图、3D 视角、定位值与批注存成 JSON；「载入会话」按<b>文件名 + 名称</b>重新绑定，找不到再按名称 + 轴指纹模糊绑定，仍找不到的<b>明确列为未绑定</b>，不静默丢弃。</p>
+        <p>要完整复现，对方还得有<b>同名 DCM 文件</b>——工具 HTML 本身不含任何标定数据，只发工具 + JSON 不够。</p>
+      </section>
+
+      <section id="m-share">
+        <h3>9. 分享与常见问题</h3>
+        <table><thead><tr><th>问题</th><th>答案</th></tr></thead><tbody>
+          <tr><td>发给别人要带哪些文件？</td><td>只发 <code>DCM_MAP_对比工具.html</code> 一个（约 300 KB）。工具是空壳，不含任何标定数据</td></tr>
+          <tr><td>报告能随便发吗？</td><td>报告含真实标定数值、DCM 文件名、来源行号、账目统计与会话配置，<b>发报告 = 发数据</b>，对外分享前确认授权</td></tr>
+          <tr><td>别人打开后能自己对比吗？</td><td>能，用 Edge / Chrome 双击打开并载入自己的 DCM</td></tr>
+          <tr><td>公司 IM / 邮箱拦截 <code>.html</code> 附件</td><td>打成 zip，或临时改后缀后让对方改回 <code>.html</code></td></tr>
+          <tr><td>对方看不到我的批注</td><td>见第 7 节：实时保存只在本机，必须另存可编辑副本或导出归档版</td></tr>
+          <tr><td>示例报告里的改动是真实变更吗？</td><td>不是。数值改动、改名对象、轴定义改动均为人为演示数据（B 版文件名 <code>ALL_示例改动版.DCM</code>）</td></tr>
+          <tr><td>解析结果可疑</td><td>点「解析自检」跑内置变异测试，任何一条不过会明确报 FAIL</td></tr>
+          <tr><td>3D 视图怎么操作</td><td>拖动旋转、滚轮缩放、悬停面片查数值、下拉切模式、「复位视角」回默认</td></tr>
+        </tbody></table>
+      </section>
+
+      <section id="m-limit">
+        <h3>10. 边界与隐私</h3>
+        <ul>
+          <li>三轴表格式未经实测：全量变化账本一律判「对比被拒绝」，对比清单里只按第一层二维数据参与计算，列表项、对比清单与报告均标注「3D·仅第一层」；未识别块不静默丢弃。</li>
+          <li>全量变化清单<b>不做改名配对</b>：改名对象分别落在 B 版新增与 B 版删除里由人对照；「改名对齐」是独立页签的可选功能，只给候选。</li>
+          <li>工具不联网、不上传、不截屏、不录屏、不写系统目录；文件只通过浏览器 File API 在内存里解析。</li>
+          <li>归档签名不构成身份认证，本版本不做防篡改。</li>
+        </ul>
+      </section>
+
+    </div>
+    <div class="manual-foot">手册内容依据工具实际代码与 ALL.DCM 实测结果编写 · 对应工具版本 v{{VERSION}} · 同目录另有独立文件 <code>DCM_MAP_使用手册.md</code> 可单独转发 · 本手册已内嵌，离线可看</div>
+  </div>
+</div>
+
+<!-- 更新记录：点页头版本号打开，结构与手册一致，内容由 build 从 src/version.js 注入 -->
+<div id="changelogOverlay" class="manual-overlay" hidden>
+  <div class="manual-panel" role="dialog" aria-modal="true" aria-labelledby="changelogTitle">
+    <div class="manual-head">
+      <div>
+        <h2 id="changelogTitle">更新记录</h2>
+        <p>当前版本 v{{VERSION}} · 按 Esc 或点外侧关闭</p>
+      </div>
+      <div class="manual-head-actions">
+        <button id="btnChangelogClose" class="btn ghost" type="button" data-tip="关闭更新记录">关闭</button>
+      </div>
+    </div>
+    <div class="manual-body changelog-body">
+      {{CHANGELOG}}
+    </div>
+    <div class="manual-foot">报告页头会标注生成它的工具版本，方便追溯这份报告是哪一版出的</div>
+  </div>
+</div>
+
+<script>
+{{CORE}}
+</script>
+<script>
+{{VIEWS}}
+</script>
+<script>
+{{REPORT}}
+</script>
+<script>
+{{UI}}
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+# 回退前的临时备份（v1.2.2 全套快照），不纳入版本管理
+_backup_v122/
+
+# 本机 / 编辑器临时文件
+.DS_Store
+Thumbs.db
+*.log
+node_modules/
